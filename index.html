@@ -92,117 +92,94 @@
 ></iframe>
 
 <script>
-// ============================================================
-//  CONFIG
-// ============================================================
 var GAS_URL = 'https://script.google.com/macros/s/AKfycbxe9vb-OWt83joNkDI9ERMQL21xJnvwVFz2rOeC1LCEywvVXFfepxeoLHbH5OGRqMkylg/exec';
 
-// ============================================================
-//  STATE
-// ============================================================
-var _token = '';
-var _ready = false;
-var frame  = document.getElementById('app-frame');
+var _token  = '';
+var frame   = document.getElementById('app-frame');
 var loading = document.getElementById('loading');
 
-// ============================================================
-//  INIT
-// ============================================================
-frame.src = GAS_URL + '?page=index';
-
-frame.addEventListener('load', function() {
-  if (!_ready) {
-    _ready = true;
-    loading.classList.add('hidden');
-    setTimeout(function() { loading.style.display = 'none'; }, 450);
-  } else {
-    // ซ่อน loading เมื่อ navigate สำเร็จ
-    loading.classList.add('hidden');
-    setTimeout(function() { loading.style.display = 'none'; }, 450);
-  }
-});
-
-// ============================================================
-//  navigateFrame — เปลี่ยน iframe.src + แสดง loading
-// ============================================================
-function navigateFrame(page, token, params) {
-  params = params || {};
-  var url = GAS_URL + '?page=' + encodeURIComponent(page);
+function buildUrl(page, token, params) {
+  var url = GAS_URL + '?page=' + encodeURIComponent(page || 'index');
   if (token) url += '&t=' + encodeURIComponent(token);
-  if (params.idx  !== undefined) url += '&idx='  + params.idx;
-  if (params.type !== undefined) url += '&type=' + encodeURIComponent(params.type);
-  if (params.open !== undefined && params.open >= 0) url += '&open=' + params.open;
-
-  // แสดง loading
-  loading.style.display = 'flex';
-  loading.classList.remove('hidden');
-
-  frame.src = url;
+  if (params) {
+    if (params.idx  !== undefined && params.idx  !== null) url += '&idx='  + params.idx;
+    if (params.type !== undefined && params.type !== null) url += '&type=' + encodeURIComponent(params.type);
+    if (params.open !== undefined && params.open !== null && params.open >= 0) url += '&open=' + params.open;
+  }
+  return url;
 }
 
-// ============================================================
-//  postMessage HANDLER — รับจาก GAS iframe
-//
-//  cross-origin note:
-//  GAS iframe origin = https://n-xxx.googleusercontent.com
-//  GitHub Pages origin = https://yim-soo-nee.github.io
-//  postMessage ทำงานได้แม้ cross-origin ถ้า targetOrigin = '*'
-//  แต่ GAS sandbox อาจ block window.parent.postMessage
-//  → ใช้ URL hash/fragment แทนเป็น fallback
-// ============================================================
-window.addEventListener('message', function(event) {
-  var data = event.data;
-  if (!data || typeof data !== 'object') return;
+function loadPage(page, token, params) {
+  loading.style.display = 'flex';
+  loading.classList.remove('hidden');
+  frame.src = buildUrl(page, token, params);
+}
 
-  if (data.type === 'SET_TOKEN') {
-    _token = data.token || '';
-    navigateFrame('dashboard', _token, {});
-  }
+// INIT
+loadPage('index', '', {});
 
-  if (data.type === 'NAVIGATE') {
-    if (data.token) _token = data.token;
-    navigateFrame(data.page || 'index', _token, data.params || {});
-  }
-
-  if (data.type === 'LOGOUT') {
-    _token = '';
-    navigateFrame('index', '', {});
-  }
+frame.addEventListener('load', function() {
+  loading.classList.add('hidden');
+  setTimeout(function() { loading.style.display = 'none'; }, 400);
+  interceptFrameClicks();
 });
 
-// ============================================================
-//  URL HASH FALLBACK
-//  GAS pages อาจใช้ window.location.hash แทน postMessage
-//  เมื่อ sandbox block postMessage
-//  format: #nav:page:token:params_json
-// ============================================================
-function checkHash() {
-  var hash = window.location.hash;
-  if (!hash || hash.length < 5) return;
-
+// ดัก click ใน iframe — ถ้าเป็น GAS link ให้ parent handle แทน
+function interceptFrameClicks() {
   try {
-    var raw  = hash.substring(1); // ลบ #
-    var data = JSON.parse(decodeURIComponent(raw));
-
-    if (data.type === 'SET_TOKEN') {
-      _token = data.token || '';
-      window.location.hash = '';
-      navigateFrame('dashboard', _token, {});
-    } else if (data.type === 'NAVIGATE') {
-      if (data.token) _token = data.token;
-      window.location.hash = '';
-      navigateFrame(data.page || 'index', _token, data.params || {});
-    } else if (data.type === 'LOGOUT') {
-      _token = '';
-      window.location.hash = '';
-      navigateFrame('index', '', {});
-    }
+    var doc = frame.contentDocument || frame.contentWindow.document;
+    if (!doc) return;
+    doc.addEventListener('click', function(e) {
+      var a = e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a) { var t = e.target; while(t && t.tagName !== 'A') t = t.parentNode; a = t; }
+      if (!a || !a.href) return;
+      var href = a.href || '';
+      if (!href.includes('script.google.com')) return;
+      e.preventDefault(); e.stopPropagation();
+      try {
+        var u = new URL(href);
+        var pg = u.searchParams.get('page') || 'index';
+        var tk = u.searchParams.get('t')    || _token;
+        if (tk) _token = tk;
+        loadPage(pg, _token, {
+          idx:  u.searchParams.get('idx'),
+          type: u.searchParams.get('type'),
+          open: u.searchParams.get('open')
+        });
+      } catch(ex) {}
+    }, true);
   } catch(e) {}
 }
 
-window.addEventListener('hashchange', checkHash);
-checkHash();
+// postMessage backup
+window.addEventListener('message', function(ev) {
+  var d = ev.data;
+  if (!d || typeof d !== 'object') return;
+  if (d.type === 'SET_TOKEN') { _token = d.token||''; loadPage('dashboard',_token,{}); }
+  if (d.type === 'NAVIGATE')  { if(d.token)_token=d.token; loadPage(d.page||'index',_token,d.params||{}); }
+  if (d.type === 'LOGOUT')    { _token=''; loadPage('index','',{}); }
+});
+
+// Polling fallback — ถ้า iframe หลุดออกไป GAS URL ให้ดึงกลับ
+setInterval(function() {
+  try {
+    var src = frame.contentWindow.location.href;
+    if (src && src.includes('script.google.com/macros')) {
+      var u  = new URL(src);
+      var pg = u.searchParams.get('page') || 'index';
+      var tk = u.searchParams.get('t')    || _token;
+      if (tk) _token = tk;
+      loadPage(pg, _token, {
+        idx:  u.searchParams.get('idx'),
+        type: u.searchParams.get('type'),
+        open: u.searchParams.get('open')
+      });
+    }
+  } catch(e) {}
+}, 500);
 </script>
+
+
 
 </body>
 </html>
