@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>ยิ้มสู้หนี้ · ห้องเรียนออนไลน์</title>
+  <meta name="description" content="ห้องเรียนออนไลน์ทักษะการบริหารจัดการหนี้ โดยโครงการยิ้มสู้หนี้">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #0d1f91;
+      font-family: 'IBM Plex Sans Thai', sans-serif;
+    }
+
+    /* iframe เต็มหน้าจอ */
+    #app-frame {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      border: none;
+      background: #f1f5f9;
+    }
+
+    /* Loading screen แสดงระหว่าง iframe load */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: #0d1f91;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 100;
+      transition: opacity .4s ease;
+    }
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #loading img {
+      width: 90px; height: 90px;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 16px rgba(0,0,0,.3));
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50%       { transform: scale(1.06); }
+    }
+    #loading .title {
+      font-size: 20px; font-weight: 700;
+      color: #fff; letter-spacing: .02em;
+    }
+    #loading .sub {
+      font-size: 13px;
+      color: rgba(255,255,255,.55);
+    }
+    #loading .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid rgba(255,255,255,.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin-top: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- Loading Screen -->
+<div id="loading">
+  <img src="https://lh3.googleusercontent.com/d/1rCJPNfrf96621kkleh7rYAj4VnSg1r48"
+       alt="ยิ้มสู้หนี้" onerror="this.style.display='none'">
+  <div class="title">ยิ้มสู้หนี้</div>
+  <div class="sub">ห้องเรียนออนไลน์ · ทักษะการบริหารจัดการหนี้</div>
+  <div class="spinner"></div>
+</div>
+
+<!-- GAS App Frame -->
+<iframe
+  id="app-frame"
+  src="about:blank"
+  allow="fullscreen"
+  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals allow-top-navigation-by-user-activation"
+></iframe>
+
+<script>
+// ============================================================
+//  CONFIG
+// ============================================================
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbwegd_WASh1IvQlX0jeq982769HxRZZTXDa5Xn0Ype1uHIsCkcezdfz6W9LFmhuRfqRJw/exec';
+
+// ============================================================
+//  STATE
+// ============================================================
+var _token    = '';
+var _ready    = false;
+
+// ============================================================
+//  INIT — โหลดหน้า index ของ GAS ก่อน
+// ============================================================
+var frame = document.getElementById('app-frame');
+var loading = document.getElementById('loading');
+
+// โหลด GAS index page
+frame.src = GAS_URL + '?page=index';
+
+// ซ่อน loading เมื่อ iframe load เสร็จ
+frame.addEventListener('load', function() {
+  if (!_ready) {
+    _ready = true;
+    loading.classList.add('hidden');
+    setTimeout(function() { loading.style.display = 'none'; }, 450);
+  }
+});
+
+// ============================================================
+//  postMessage HANDLER
+//  รับ message จาก GAS pages แล้วเปลี่ยน iframe.src
+// ============================================================
+window.addEventListener('message', function(event) {
+  // Security: รับเฉพาะจาก Google Script domain
+  if (!event.origin.includes('google.com') &&
+      !event.origin.includes('googleusercontent.com')) return;
+
+  var data = event.data;
+  if (!data || typeof data !== 'object') return;
+
+  // ---- NAVIGATE ----
+  if (data.type === 'NAVIGATE') {
+    var page  = data.page  || 'index';
+    var token = data.token || _token;
+    if (token) _token = token;
+
+    var url = buildUrl(page, token, data.params || {});
+    navigateFrame(url);
+  }
+
+  // ---- SAVE TOKEN (หลัง login) ----
+  if (data.type === 'SET_TOKEN') {
+    _token = data.token || '';
+    var url = buildUrl('dashboard', _token, {});
+    navigateFrame(url);
+  }
+
+  // ---- LOGOUT ----
+  if (data.type === 'LOGOUT') {
+    _token = '';
+    navigateFrame(GAS_URL + '?page=index');
+  }
+});
+
+// ============================================================
+//  BUILD URL
+// ============================================================
+function buildUrl(page, token, params) {
+  var url = GAS_URL + '?page=' + encodeURIComponent(page);
+  if (token) url += '&t=' + encodeURIComponent(token);
+  if (params.idx  !== undefined) url += '&idx='  + params.idx;
+  if (params.type !== undefined) url += '&type=' + encodeURIComponent(params.type);
+  if (params.open !== undefined && params.open >= 0) url += '&open=' + params.open;
+  return url;
+}
+
+// ============================================================
+//  NAVIGATE FRAME
+// ============================================================
+function navigateFrame(url) {
+  // แสดง loading ระหว่างเปลี่ยนหน้า
+  loading.style.display = 'flex';
+  loading.classList.remove('hidden');
+
+  frame.src = url;
+}
+
+// ============================================================
+//  HANDLE BROWSER BACK/FORWARD (optional)
+// ============================================================
+window.addEventListener('popstate', function(e) {
+  if (e.state && e.state.url) {
+    frame.src = e.state.url;
+  }
+});
+</script>
+
+</body>
+</html>
