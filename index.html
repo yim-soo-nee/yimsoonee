@@ -88,7 +88,7 @@
   id="app-frame"
   src="about:blank"
   allow="fullscreen"
-  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
+  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals allow-top-navigation-by-user-activation"
 ></iframe>
 
 <script>
@@ -98,86 +98,119 @@ var _token  = '';
 var frame   = document.getElementById('app-frame');
 var loading = document.getElementById('loading');
 
+// Build GAS URL with token and params
 function buildUrl(page, token, params) {
   var url = GAS_URL + '?page=' + encodeURIComponent(page || 'index');
   if (token) url += '&t=' + encodeURIComponent(token);
   if (params) {
-    if (params.idx  !== undefined && params.idx  !== null) url += '&idx='  + params.idx;
-    if (params.type !== undefined && params.type !== null) url += '&type=' + encodeURIComponent(params.type);
-    if (params.open !== undefined && params.open !== null && params.open >= 0) url += '&open=' + params.open;
+    if (params.idx  != null) url += '&idx='  + params.idx;
+    if (params.type != null) url += '&type=' + encodeURIComponent(params.type);
+    if (params.open != null && params.open >= 0) url += '&open=' + params.open;
   }
   return url;
 }
 
+// Change iframe src
 function loadPage(page, token, params) {
   loading.style.display = 'flex';
   loading.classList.remove('hidden');
-  frame.src = buildUrl(page, token, params);
+  _token = token || _token;
+  frame.src = buildUrl(page, _token, params);
 }
 
 // INIT
-loadPage('index', '', {});
+frame.src = buildUrl('index', '', {});
 
+// Hide loading when iframe finishes loading
 frame.addEventListener('load', function() {
   loading.classList.add('hidden');
   setTimeout(function() { loading.style.display = 'none'; }, 400);
-  interceptFrameClicks();
+
+  // After each load, check if URL changed to GAS direct URL
+  // and intercept links inside iframe
+  setTimeout(interceptLinks, 300);
 });
 
-// ดัก click ใน iframe — ถ้าเป็น GAS link ให้ parent handle แทน
-function interceptFrameClicks() {
+// Intercept <a> clicks inside iframe
+function interceptLinks() {
   try {
-    var doc = frame.contentDocument || frame.contentWindow.document;
+    var doc = frame.contentDocument;
     if (!doc) return;
-    doc.addEventListener('click', function(e) {
-      var a = e.target.closest ? e.target.closest('a[href]') : null;
-      if (!a) { var t = e.target; while(t && t.tagName !== 'A') t = t.parentNode; a = t; }
-      if (!a || !a.href) return;
-      var href = a.href || '';
-      if (!href.includes('script.google.com')) return;
-      e.preventDefault(); e.stopPropagation();
-      try {
-        var u = new URL(href);
-        var pg = u.searchParams.get('page') || 'index';
-        var tk = u.searchParams.get('t')    || _token;
-        if (tk) _token = tk;
-        loadPage(pg, _token, {
-          idx:  u.searchParams.get('idx'),
-          type: u.searchParams.get('type'),
-          open: u.searchParams.get('open')
-        });
-      } catch(ex) {}
-    }, true);
-  } catch(e) {}
+    // Remove old listener if any
+    doc.removeEventListener('click', handleIframeClick, true);
+    doc.addEventListener('click', handleIframeClick, true);
+  } catch(e) {
+    // cross-origin blocked - can't access contentDocument
+    // fall back to URL polling
+  }
 }
 
-// postMessage backup
+function handleIframeClick(e) {
+  // Walk up to find <a> tag
+  var el = e.target;
+  while (el && el.tagName !== 'A') el = el.parentNode;
+  if (!el || !el.href) return;
+
+  var href = el.href;
+  // Only intercept GAS URLs
+  if (href.indexOf('script.google.com') === -1) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  try {
+    var u    = new URL(href);
+    var page = u.searchParams.get('page') || 'index';
+    var tok  = u.searchParams.get('t')    || _token;
+    if (tok) _token = tok;
+    loadPage(page, _token, {
+      idx:  u.searchParams.get('idx'),
+      type: u.searchParams.get('type'),
+      open: u.searchParams.get('open')
+    });
+  } catch(ex) {}
+}
+
+// postMessage handler (backup - in case GAS can send postMessage)
 window.addEventListener('message', function(ev) {
+  // Accept from any Google origin
+  if (ev.origin && ev.origin.indexOf('google') === -1 &&
+      ev.origin !== window.location.origin) return;
+
   var d = ev.data;
   if (!d || typeof d !== 'object') return;
-  if (d.type === 'SET_TOKEN') { _token = d.token||''; loadPage('dashboard',_token,{}); }
-  if (d.type === 'NAVIGATE')  { if(d.token)_token=d.token; loadPage(d.page||'index',_token,d.params||{}); }
-  if (d.type === 'LOGOUT')    { _token=''; loadPage('index','',{}); }
+
+  if (d.type === 'SET_TOKEN') { _token = d.token || ''; loadPage('dashboard', _token, {}); }
+  if (d.type === 'NAVIGATE')  { if (d.token) _token = d.token; loadPage(d.page||'index', _token, d.params||{}); }
+  if (d.type === 'LOGOUT')    { _token = ''; loadPage('index', '', {}); }
 });
 
-// Polling fallback — ถ้า iframe หลุดออกไป GAS URL ให้ดึงกลับ
+// Polling: detect if iframe navigated to GAS URL directly
+// (happens when sandbox allows top navigation)
+var _pollCount = 0;
 setInterval(function() {
+  _pollCount++;
   try {
     var src = frame.contentWindow.location.href;
-    if (src && src.includes('script.google.com/macros')) {
-      var u  = new URL(src);
-      var pg = u.searchParams.get('page') || 'index';
-      var tk = u.searchParams.get('t')    || _token;
-      if (tk) _token = tk;
-      loadPage(pg, _token, {
+    // If iframe is at a GAS URL with page parameter, re-wrap it
+    if (src && src.indexOf('script.google.com/macros') !== -1) {
+      var u    = new URL(src);
+      var page = u.searchParams.get('page') || 'index';
+      var tok  = u.searchParams.get('t')    || _token;
+      if (tok) _token = tok;
+      loadPage(page, _token, {
         idx:  u.searchParams.get('idx'),
         type: u.searchParams.get('type'),
         open: u.searchParams.get('open')
       });
     }
-  } catch(e) {}
+  } catch(e) {
+    // Cross-origin - cannot read href, this is expected
+  }
 }, 500);
 </script>
+
+
 
 
 
