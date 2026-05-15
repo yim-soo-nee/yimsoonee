@@ -2,74 +2,62 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ยิ้มสู้หนี้ · ห้องเรียนออนไลน์</title>
-  <meta name="description" content="ห้องเรียนออนไลน์ทักษะการบริหารจัดการหนี้ โดยโครงการยิ้มสู้หนี้">
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; }
 
-    html, body {
-      width: 100%; height: 100%;
-      overflow: hidden;
-      background: #0d1f91;
-      font-family: 'IBM Plex Sans Thai', sans-serif;
-    }
-
-    /* iframe เต็มหน้าจอ */
-    #app-frame {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      border: none;
-      background: #f1f5f9;
-    }
-
-    /* Loading screen แสดงระหว่าง iframe load */
+    /* ===== Loading Screen ===== */
     #loading {
-      position: fixed;
-      inset: 0;
-      background: #0d1f91;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      z-index: 100;
-      transition: opacity .4s ease;
+      position:fixed; inset:0; z-index:100;
+      background:#0d1f91;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center; gap:16px;
+      font-family:'IBM Plex Sans Thai', 'Noto Sans Thai', sans-serif;
+      transition:opacity .4s ease;
     }
-    #loading.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-    #loading img {
-      width: 90px; height: 90px;
-      object-fit: contain;
-      filter: drop-shadow(0 4px 16px rgba(0,0,0,.3));
-      animation: pulse 2s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50%       { transform: scale(1.06); }
-    }
-    #loading .title {
-      font-size: 20px; font-weight: 700;
-      color: #fff; letter-spacing: .02em;
-    }
-    #loading .sub {
-      font-size: 13px;
-      color: rgba(255,255,255,.55);
-    }
+    #loading.hide { opacity:0; pointer-events:none; }
+    #loading img { width:80px; height:80px; object-fit:contain; }
+    #loading .title { font-size:18px; font-weight:700; color:#fff; }
+    #loading .sub   { font-size:13px; color:rgba(255,255,255,.6); }
     #loading .spinner {
-      width: 32px; height: 32px;
-      border: 3px solid rgba(255,255,255,.2);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin .8s linear infinite;
-      margin-top: 8px;
+      width:30px; height:30px;
+      border:3px solid rgba(255,255,255,.2);
+      border-top-color:#fff;
+      border-radius:50%;
+      animation:spin .8s linear infinite;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading .msg { font-size:13px; color:rgba(255,255,255,.8); }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* ===== Error Screen ===== */
+    #error-screen {
+      position:fixed; inset:0;
+      background:#f1f5f9;
+      display:none; flex-direction:column;
+      align-items:center; justify-content:center; gap:16px;
+      font-family:'IBM Plex Sans Thai', 'Noto Sans Thai', sans-serif;
+      padding:32px; text-align:center;
+    }
+    #error-screen .err-icon { font-size:48px; }
+    #error-screen h2 { font-size:18px; color:#0d1f91; font-weight:700; }
+    #error-screen p  { font-size:13px; color:#64748b; line-height:1.6; }
+    #error-screen button {
+      padding:12px 28px; background:#0d1f91; color:#fff;
+      border:none; border-radius:10px; font-size:14px;
+      font-weight:600; cursor:pointer; font-family:inherit;
+    }
+
+    /* ===== App iframe ===== */
+    #app-frame {
+      position:fixed; top:0; left:0;
+      width:100%; height:100%;
+      border:none;
+      display:none;
+    }
   </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -81,138 +69,116 @@
   <div class="title">ยิ้มสู้หนี้</div>
   <div class="sub">ห้องเรียนออนไลน์ · ทักษะการบริหารจัดการหนี้</div>
   <div class="spinner"></div>
+  <div class="msg" id="loading-msg">กำลังเชื่อมต่อ LINE...</div>
 </div>
 
-<!-- GAS App Frame -->
-<iframe
-  id="app-frame"
-  src="about:blank"
-  allow="fullscreen"
-  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals allow-top-navigation-by-user-activation"
-></iframe>
+<!-- Error Screen -->
+<div id="error-screen">
+  <div class="err-icon">⚠️</div>
+  <h2>เกิดข้อผิดพลาด</h2>
+  <p id="error-msg">ไม่สามารถเชื่อมต่อระบบได้<br>กรุณาลองใหม่อีกครั้ง</p>
+  <button onclick="location.reload()">ลองใหม่</button>
+</div>
+
+<!-- GAS App iframe (แสดงหลัง login สำเร็จ) -->
+<iframe id="app-frame" allow="fullscreen"></iframe>
 
 <script>
-var GAS_URL = 'https://script.google.com/macros/s/AKfycbxe9vb-OWt83joNkDI9ERMQL21xJnvwVFz2rOeC1LCEywvVXFfepxeoLHbH5OGRqMkylg/exec';
+// ============================================================
+//  CONFIG — แก้ค่าเหล่านี้เท่านั้น
+// ============================================================
+var LIFF_ID = '2006491477-lMQxonNr';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbyv2nRwrrDjVGnMqqfLhI_HD3VzRpNyy2EggcFxNnunUkDr0jNIxEkMdKoMvFdMm77zSA/exec';
 
-var _token  = '';
-var frame   = document.getElementById('app-frame');
-var loading = document.getElementById('loading');
-
-// Build GAS URL with token and params
-function buildUrl(page, token, params) {
-  var url = GAS_URL + '?page=' + encodeURIComponent(page || 'index');
-  if (token) url += '&t=' + encodeURIComponent(token);
-  if (params) {
-    if (params.idx  != null) url += '&idx='  + params.idx;
-    if (params.type != null) url += '&type=' + encodeURIComponent(params.type);
-    if (params.open != null && params.open >= 0) url += '&open=' + params.open;
-  }
-  return url;
+// ============================================================
+//  UTILS
+// ============================================================
+function setMsg(msg) {
+  var el = document.getElementById('loading-msg');
+  if (el) el.textContent = msg;
 }
 
-// Change iframe src
-function loadPage(page, token, params) {
-  loading.style.display = 'flex';
-  loading.classList.remove('hidden');
-  _token = token || _token;
-  frame.src = buildUrl(page, _token, params);
+function showError(msg) {
+  document.getElementById('loading').classList.add('hide');
+  var err = document.getElementById('error-screen');
+  err.style.display = 'flex';
+  document.getElementById('error-msg').textContent = msg || 'เกิดข้อผิดพลาด กรุณาลองใหม่';
 }
 
-// INIT
-frame.src = buildUrl('index', '', {});
+function launchApp(token) {
+  // โหลด GAS พร้อม token ใน iframe
+  var url = GAS_URL + (token ? '?liff_token=' + encodeURIComponent(token) : '');
+  var frame = document.getElementById('app-frame');
+  frame.src = url;
+  frame.style.display = 'block';
 
-// Hide loading when iframe finishes loading
-frame.addEventListener('load', function() {
-  loading.classList.add('hidden');
-  setTimeout(function() { loading.style.display = 'none'; }, 400);
-
-  // After each load, check if URL changed to GAS direct URL
-  // and intercept links inside iframe
-  setTimeout(interceptLinks, 300);
-});
-
-// Intercept <a> clicks inside iframe
-function interceptLinks() {
-  try {
-    var doc = frame.contentDocument;
-    if (!doc) return;
-    // Remove old listener if any
-    doc.removeEventListener('click', handleIframeClick, true);
-    doc.addEventListener('click', handleIframeClick, true);
-  } catch(e) {
-    // cross-origin blocked - can't access contentDocument
-    // fall back to URL polling
-  }
+  // ซ่อน loading หลัง iframe โหลด
+  frame.onload = function() {
+    var loading = document.getElementById('loading');
+    loading.classList.add('hide');
+    setTimeout(function() { loading.style.display = 'none'; }, 450);
+  };
 }
 
-function handleIframeClick(e) {
-  // Walk up to find <a> tag
-  var el = e.target;
-  while (el && el.tagName !== 'A') el = el.parentNode;
-  if (!el || !el.href) return;
+// ============================================================
+//  CALL GAS — loginWithLine
+// ============================================================
+function callGasLoginWithLine(lineUserId, lineDisplayName) {
+  setMsg('กำลังเข้าสู่ระบบ...');
 
-  var href = el.href;
-  // Only intercept GAS URLs
-  if (href.indexOf('script.google.com') === -1) return;
+  var url = GAS_URL
+    + '?action=liff_login'
+    + '&lineUserId='      + encodeURIComponent(lineUserId)
+    + '&lineDisplayName=' + encodeURIComponent(lineDisplayName || '');
 
-  e.preventDefault();
-  e.stopPropagation();
-
-  try {
-    var u    = new URL(href);
-    var page = u.searchParams.get('page') || 'index';
-    var tok  = u.searchParams.get('t')    || _token;
-    if (tok) _token = tok;
-    loadPage(page, _token, {
-      idx:  u.searchParams.get('idx'),
-      type: u.searchParams.get('type'),
-      open: u.searchParams.get('open')
+  fetch(url)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && data.ok && data.token) {
+        setMsg('เข้าสู่ระบบสำเร็จ!');
+        launchApp(data.token);
+      } else {
+        showError((data && data.message) || 'เข้าสู่ระบบไม่สำเร็จ');
+      }
+    })
+    .catch(function(err) {
+      console.error('GAS call failed:', err);
+      showError('ไม่สามารถเชื่อมต่อระบบได้');
     });
-  } catch(ex) {}
 }
 
-// postMessage handler (backup - in case GAS can send postMessage)
-window.addEventListener('message', function(ev) {
-  // Accept from any Google origin
-  if (ev.origin && ev.origin.indexOf('google') === -1 &&
-      ev.origin !== window.location.origin) return;
+// ============================================================
+//  LIFF INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', function() {
+  setMsg('กำลังเชื่อมต่อ LINE...');
 
-  var d = ev.data;
-  if (!d || typeof d !== 'object') return;
+  liff.init({ liffId: LIFF_ID })
+    .then(function() {
 
-  if (d.type === 'SET_TOKEN') { _token = d.token || ''; loadPage('dashboard', _token, {}); }
-  if (d.type === 'NAVIGATE')  { if (d.token) _token = d.token; loadPage(d.page||'index', _token, d.params||{}); }
-  if (d.type === 'LOGOUT')    { _token = ''; loadPage('index', '', {}); }
+      // ยังไม่ได้ login LINE → redirect ไป LINE login
+      if (!liff.isLoggedIn()) {
+        setMsg('กำลังพาไปยัง LINE Login...');
+        liff.login();
+        return;
+      }
+
+      // login แล้ว → ดึง profile
+      setMsg('กำลังดึงข้อมูล LINE...');
+      return liff.getProfile();
+    })
+    .then(function(profile) {
+      if (!profile) return; // กรณี liff.login() redirect ออกไปแล้ว
+      console.log('[LIFF] Profile:', profile.userId.substring(0,8) + '...');
+      setMsg('ยืนยันตัวตนสำเร็จ...');
+      callGasLoginWithLine(profile.userId, profile.displayName);
+    })
+    .catch(function(err) {
+      console.error('[LIFF] Error:', err);
+      showError('LINE Login ล้มเหลว: ' + (err.message || 'กรุณาลองใหม่'));
+    });
 });
-
-// Polling: detect if iframe navigated to GAS URL directly
-// (happens when sandbox allows top navigation)
-var _pollCount = 0;
-setInterval(function() {
-  _pollCount++;
-  try {
-    var src = frame.contentWindow.location.href;
-    // If iframe is at a GAS URL with page parameter, re-wrap it
-    if (src && src.indexOf('script.google.com/macros') !== -1) {
-      var u    = new URL(src);
-      var page = u.searchParams.get('page') || 'index';
-      var tok  = u.searchParams.get('t')    || _token;
-      if (tok) _token = tok;
-      loadPage(page, _token, {
-        idx:  u.searchParams.get('idx'),
-        type: u.searchParams.get('type'),
-        open: u.searchParams.get('open')
-      });
-    }
-  } catch(e) {
-    // Cross-origin - cannot read href, this is expected
-  }
-}, 500);
 </script>
-
-
-
-
 
 </body>
 </html>
